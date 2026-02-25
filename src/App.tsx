@@ -267,7 +267,7 @@ export default function App() {
           
           if (!res.ok) {
             const text = await res.text();
-            throw new Error(`Erro ${res.status}: ${text.substring(0, 30)}`);
+            throw new Error(`Erro ${res.status} em ${url}: ${text.substring(0, 50)}`);
           }
           
           const contentType = res.headers.get('content-type');
