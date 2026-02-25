@@ -289,6 +289,7 @@ export default function App() {
       setFinancials(fins);
       setSettings(sets);
       setConnectionError(null);
+      setIsLoading(false); // Clear loading on success
     } catch (error: any) {
       console.error('Frontend: FetchData error:', error);
       if (retries > 0) {
@@ -296,9 +297,8 @@ export default function App() {
         setTimeout(() => fetchData(retries - 1), 2000);
       } else {
         setConnectionError(error.message);
+        setIsLoading(false); // Clear loading on final failure
       }
-    } finally {
-      if (retries === 0) setIsLoading(false);
     }
   };
 
