@@ -24,7 +24,8 @@ import {
   Save,
   PenTool,
   FileText,
-  Share2
+  Share2,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -215,6 +216,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>({});
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Partial<Appointment> | null>(null);
   const [activeService, setActiveService] = useState<Appointment | null>(null);
@@ -226,10 +228,19 @@ export default function App() {
   const sigCanvas = React.useRef<SignatureCanvas>(null);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      if (isLoading) setLoadingTimeout(true);
+    }, 10000);
+
     const checkHealthAndFetch = async () => {
       console.log('Frontend: Checking server health...');
       try {
-        const res = await fetch('/health');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const res = await fetch('/health', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        
         if (res.ok) {
           console.log('Frontend: Server is healthy, fetching data...');
           fetchData();
@@ -237,7 +248,7 @@ export default function App() {
           throw new Error('Server starting...');
         }
       } catch (e) {
-        console.log('Frontend: Server not ready, retrying health check...');
+        console.log('Frontend: Server not ready or timeout, retrying health check...');
         setTimeout(checkHealthAndFetch, 2000);
       }
     };
@@ -249,13 +260,16 @@ export default function App() {
       setTheme(savedTheme);
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
+    
+    return () => clearTimeout(timer);
   }, []);
 
   const fetchData = async (retries = 3) => {
-    console.log(`Frontend: Fetching fresh data (attempt ${4 - retries})...`);
+    console.log(`Frontend: Starting fetchData (attempt ${4 - retries})...`);
     setIsLoading(true);
     try {
       const fetchWithCheck = async (url: string) => {
+        console.log(`Frontend: Fetching ${url}...`);
         const res = await fetch(url);
         if (!res.ok) {
           const text = await res.text();
@@ -274,7 +288,7 @@ export default function App() {
         fetchWithCheck('/api/settings'),
       ]);
       
-      console.log('Frontend: Received data:', { 
+      console.log('Frontend: Data fetched successfully:', { 
         apptsCount: appts.length, 
         finsCount: fins.length
       });
@@ -676,11 +690,33 @@ export default function App() {
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} toggleTheme={toggleTheme} />
 
       {isLoading && !connectionError && (
-        <div className="fixed inset-0 bg-white/80 dark:bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-sm font-medium text-gray-500 animate-pulse">Carregando dados...</p>
-          </div>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-6">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white dark:bg-slate-900 rounded-3xl p-8 shadow-2xl border border-white/20 flex flex-col items-center gap-6 max-w-xs w-full text-center"
+          >
+            <div className="relative">
+              <div className="w-16 h-16 border-4 border-emerald-500/20 rounded-full"></div>
+              <div className="absolute top-0 left-0 w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+            
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">Sincronizando Dados</h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Estamos preparando tudo para você começar.</p>
+            </div>
+
+            {loadingTimeout && (
+              <motion.button
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                onClick={() => window.location.reload()}
+                className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-sm font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
+              >
+                <RefreshCw size={16} /> Forçar Recarregamento
+              </motion.button>
+            )}
+          </motion.div>
         </div>
       )}
 
