@@ -32,4 +32,5 @@ export interface Financial {
 export interface Settings {
   logo?: string;
   theme?: 'light' | 'dark';
+  company_name?: string;
 }
