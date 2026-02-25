@@ -1,0 +1,5 @@
+{
+  "name": "AF CLEAN Manager",
+  "description": "Sistema profissional de gestão para limpeza de estofados com agendamento, checklist de fotos, financeiro e assinatura digital.",
+  "requestFramePermissions": ["camera"]
+}
