@@ -263,6 +263,10 @@ async function startServer() {
     console.log(`[Server] Production mode: serving static files from ${distPath}`);
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
+      if (req.url.startsWith('/api/')) {
+        console.log(`[Server] 404 on API route: ${req.url}`);
+        return res.status(404).json({ error: `API route not found: ${req.url}` });
+      }
       const indexPath = path.join(distPath, "index.html");
       res.sendFile(indexPath);
     });

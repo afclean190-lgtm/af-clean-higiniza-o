@@ -234,29 +234,44 @@ export default function App() {
 
   const fetchData = async () => {
     console.log('Frontend: Fetching fresh data...');
-    const [appts, fins, sets] = await Promise.all([
-      fetch('/api/appointments').then(res => res.json()),
-      fetch('/api/financials').then(res => res.json()),
-      fetch('/api/settings').then(res => res.json()),
-    ]);
-    
-    console.log('Frontend: Received data:', { 
-      apptsCount: appts.length, 
-      finsCount: fins.length,
-      apptIds: appts.map((a: any) => a.id),
-      finIds: fins.map((f: any) => f.id)
-    });
+    try {
+      const fetchWithCheck = async (url: string) => {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Erro ao carregar ${url}: ${res.status} ${text.substring(0, 50)}`);
+        }
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error(`Resposta inválida de ${url}: Esperava JSON, recebeu ${contentType}`);
+        }
+        return res.json();
+      };
 
-    // Parse photo arrays
-    const parsedAppts = appts.map((a: any) => ({
-      ...a,
-      before_photos: JSON.parse(a.before_photos || '[]'),
-      after_photos: JSON.parse(a.after_photos || '[]'),
-    }));
-    
-    setAppointments(parsedAppts);
-    setFinancials(fins);
-    setSettings(sets);
+      const [appts, fins, sets] = await Promise.all([
+        fetchWithCheck('/api/appointments'),
+        fetchWithCheck('/api/financials'),
+        fetchWithCheck('/api/settings'),
+      ]);
+      
+      console.log('Frontend: Received data:', { 
+        apptsCount: appts.length, 
+        finsCount: fins.length
+      });
+
+      const parsedAppts = appts.map((a: any) => ({
+        ...a,
+        before_photos: JSON.parse(a.before_photos || '[]'),
+        after_photos: JSON.parse(a.after_photos || '[]'),
+      }));
+      
+      setAppointments(parsedAppts);
+      setFinancials(fins);
+      setSettings(sets);
+    } catch (error: any) {
+      console.error('Frontend: FetchData error:', error);
+      // Don't alert on initial load to avoid spam, but log it
+    }
   };
 
   const toggleTheme = () => {
