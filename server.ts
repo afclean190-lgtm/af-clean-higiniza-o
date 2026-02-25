@@ -3,20 +3,27 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PORT = 3000;
 
 async function startServer() {
-  console.log("[Server] Starting server initialization...");
+  const app = express();
   
+  // 1. Basic Middleware
+  app.use(express.json({ limit: '50mb' }));
+  
+  // 2. Health Check (Immediate response for load balancers)
+  app.get("/health", (req, res) => res.status(200).send("OK"));
+
+  // 3. Database Initialization
   let db: Database.Database;
   try {
     const dbPath = path.join(__dirname, "afclean.db");
-    console.log(`[Server] Opening database at ${dbPath}`);
     db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
     
-    // Initialize Database
     db.exec(`
       CREATE TABLE IF NOT EXISTS appointments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,6 +38,7 @@ async function startServer() {
         price REAL DEFAULT 0,
         payment_method TEXT,
         installments INTEGER DEFAULT 1,
+        service_type TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -48,255 +56,125 @@ async function startServer() {
         value TEXT
       );
     `);
-
-    // Migration: Add new columns if they don't exist
-    try {
-      db.prepare("ALTER TABLE appointments ADD COLUMN before_photos TEXT DEFAULT '[]'").run();
-    } catch (e) {}
-    try {
-      db.prepare("ALTER TABLE appointments ADD COLUMN after_photos TEXT DEFAULT '[]'").run();
-    } catch (e) {}
-    try {
-      db.prepare("ALTER TABLE appointments ADD COLUMN service_type TEXT").run();
-    } catch (e) {}
-    
-    console.log("[Server] Database initialized successfully.");
+    console.log("[Server] Database connected and initialized.");
   } catch (error) {
-    console.error("[Server] Database initialization failed:", error);
-    process.exit(1);
+    console.error("[Server] Database error:", error);
+    // Continue so server can respond with errors instead of being down
   }
 
-  const app = express();
-  const PORT = 3000;
+  // 4. API Routes
+  const api = express.Router();
 
-  app.use(express.json({ limit: '50mb' }));
-  
-  // Request Logging
-  app.use((req, res, next) => {
-    console.log(`[Server] ${req.method} ${req.url}`);
-    next();
-  });
-
-  // API Routes
-  app.get("/api/appointments", (req, res) => {
+  api.get("/appointments", (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM appointments ORDER BY date DESC").all();
       res.json(rows);
-    } catch (error: any) {
-      console.error("[Server] Get appointments error:", error);
-      res.status(500).json({ error: error.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.post("/api/appointments", (req, res) => {
-    const { 
-      customer_name, address, phone, date, price, 
-      payment_method, installments, service_type,
-      before_photos, after_photos 
-    } = req.body;
-    
+  api.post("/appointments", (req, res) => {
     try {
-      const beforePhotosStr = Array.isArray(before_photos) ? JSON.stringify(before_photos) : (before_photos || '[]');
-      const afterPhotosStr = Array.isArray(after_photos) ? JSON.stringify(after_photos) : (after_photos || '[]');
-      
-      const info = db.prepare(
-        "INSERT INTO appointments (customer_name, address, phone, date, price, payment_method, installments, service_type, before_photos, after_photos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ).run(
-        customer_name, address, phone, date, price || 0, 
-        payment_method || 'Dinheiro', installments || 1, 
-        service_type || 'Limpeza de Sófá',
-        beforePhotosStr, afterPhotosStr
-      );
+      const { customer_name, address, phone, date, price, payment_method, installments, service_type, before_photos, after_photos } = req.body;
+      const beforeStr = Array.isArray(before_photos) ? JSON.stringify(before_photos) : (before_photos || '[]');
+      const afterStr = Array.isArray(after_photos) ? JSON.stringify(after_photos) : (after_photos || '[]');
+      const info = db.prepare(`
+        INSERT INTO appointments (customer_name, address, phone, date, price, payment_method, installments, service_type, before_photos, after_photos)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(customer_name, address, phone, date, price || 0, payment_method || 'Dinheiro', installments || 1, service_type || 'Limpeza', beforeStr, afterStr);
       res.json({ id: info.lastInsertRowid });
-    } catch (error: any) {
-      console.error("[Server] Create appointment error:", error);
-      res.status(500).json({ error: error.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.patch("/api/appointments/:id", (req, res) => {
-    const id = Number(req.params.id);
-    const updates = { ...req.body };
-    
-    // Remove id from updates if present
-    delete (updates as any).id;
-    
-    // Stringify photo arrays if present
-    if (updates.before_photos && Array.isArray(updates.before_photos)) {
-      updates.before_photos = JSON.stringify(updates.before_photos);
-    }
-    if (updates.after_photos && Array.isArray(updates.after_photos)) {
-      updates.after_photos = JSON.stringify(updates.after_photos);
-    }
-    
-    const keys = Object.keys(updates);
-    const values = Object.values(updates);
-    
-    if (keys.length === 0) return res.status(400).json({ error: "No updates provided" });
-
+  api.patch("/appointments/:id", (req, res) => {
     try {
-      const setClause = keys.map(key => `${key} = ?`).join(", ");
-      const result = db.prepare(`UPDATE appointments SET ${setClause} WHERE id = ?`).run(...values, id);
-      console.log(`[Server] Update appointment ${id} result:`, result);
-      res.json({ success: true, changes: result.changes });
-    } catch (error: any) {
-      console.error("[Server] Update appointment error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  });
-
-  app.delete("/api/appointments/:id", (req, res) => {
-    const id = Number(req.params.id);
-    console.log(`[Server] Request to delete appointment ID: ${id}`);
-    try {
-      const stmt = db.prepare("DELETE FROM appointments WHERE id = ?");
-      const info = stmt.run(id);
+      const id = Number(req.params.id);
+      const updates = { ...req.body };
+      delete (updates as any).id;
+      if (updates.before_photos && Array.isArray(updates.before_photos)) updates.before_photos = JSON.stringify(updates.before_photos);
+      if (updates.after_photos && Array.isArray(updates.after_photos)) updates.after_photos = JSON.stringify(updates.after_photos);
       
-      console.log(`[Server] Delete appointment result:`, info);
+      const keys = Object.keys(updates);
+      const values = Object.values(updates);
+      if (keys.length === 0) return res.status(400).json({ error: "No updates" });
       
-      res.json({ 
-        success: true, 
-        message: info.changes > 0 ? "Deleted successfully" : "No record found to delete",
-        changes: info.changes 
-      });
-    } catch (error: any) {
-      console.error("[Server] Delete appointment error:", error);
-      res.status(500).json({ success: false, error: error.message });
-    }
+      const setClause = keys.map(k => `${k} = ?`).join(", ");
+      db.prepare(`UPDATE appointments SET ${setClause} WHERE id = ?`).run(...values, id);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // Financials API
-  app.get("/api/financials", (req, res) => {
+  api.delete("/appointments/:id", (req, res) => {
     try {
-      const rows = db.prepare("SELECT * FROM financials ORDER BY date DESC").all();
-      res.json(rows);
-    } catch (error: any) {
-      console.error("[Server] Get financials error:", error);
-      res.status(500).json({ error: error.message });
-    }
+      db.prepare("DELETE FROM appointments WHERE id = ?").run(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.post("/api/financials", (req, res) => {
-    const { type, description, amount, date } = req.body;
+  api.get("/financials", (req, res) => {
     try {
-      const info = db.prepare(
-        "INSERT INTO financials (type, description, amount, date) VALUES (?, ?, ?, ?)"
-      ).run(type, description, amount, date);
+      res.json(db.prepare("SELECT * FROM financials ORDER BY date DESC").all());
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  api.post("/financials", (req, res) => {
+    try {
+      const { type, description, amount, date } = req.body;
+      const info = db.prepare("INSERT INTO financials (type, description, amount, date) VALUES (?, ?, ?, ?)").run(type, description, amount, date);
       res.json({ id: info.lastInsertRowid });
-    } catch (error: any) {
-      console.error("[Server] Create financial error:", error);
-      res.status(500).json({ error: error.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.patch("/api/financials/:id", (req, res) => {
-    const id = Number(req.params.id);
-    const updates = { ...req.body };
-    delete (updates as any).id;
-    
-    const keys = Object.keys(updates);
-    const values = Object.values(updates);
-    
-    if (keys.length === 0) return res.status(400).json({ error: "No updates provided" });
-
+  api.delete("/financials/:id", (req, res) => {
     try {
-      const setClause = keys.map(key => `${key} = ?`).join(", ");
-      const result = db.prepare(`UPDATE financials SET ${setClause} WHERE id = ?`).run(...values, id);
-      console.log(`[Server] Update financial ${id} result:`, result);
-      res.json({ success: true, changes: result.changes });
-    } catch (error: any) {
-      console.error("[Server] Update financial error:", error);
-      res.status(500).json({ error: error.message });
-    }
+      db.prepare("DELETE FROM financials WHERE id = ?").run(Number(req.params.id));
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.delete("/api/financials", (req, res) => {
-    try {
-      const info = db.prepare("DELETE FROM financials").run();
-      console.log(`[Server] Clear financials result:`, info);
-      res.json({ success: true, changes: info.changes });
-    } catch (error: any) {
-      console.error("[Server] Clear financials error:", error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  app.delete("/api/financials/:id", (req, res) => {
-    const id = Number(req.params.id);
-    console.log(`[Server] Request to delete financial ID: ${id}`);
-    try {
-      const stmt = db.prepare("DELETE FROM financials WHERE id = ?");
-      const info = stmt.run(id);
-      
-      console.log(`[Server] Delete financial result:`, info);
-      
-      res.json({ 
-        success: true, 
-        message: info.changes > 0 ? "Deleted successfully" : "No record found to delete",
-        changes: info.changes 
-      });
-    } catch (error: any) {
-      console.error("[Server] Delete financial error:", error);
-      res.status(500).json({ success: false, error: error.message });
-    }
-  });
-
-  // Settings API
-  app.get("/api/settings", (req, res) => {
+  api.get("/settings", (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM settings").all();
-      const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
-      res.json(settings);
-    } catch (error: any) {
-      console.error("[Server] Get settings error:", error);
-      res.status(500).json({ error: error.message });
-    }
+      res.json(rows.reduce((acc: any, r: any) => ({ ...acc, [r.key]: r.value }), {}));
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  app.post("/api/settings", (req, res) => {
+  api.post("/settings", (req, res) => {
     try {
       const { key, value } = req.body;
       db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
       res.json({ success: true });
-    } catch (error: any) {
-      console.error("[Server] Update settings error:", error);
-      res.status(500).json({ error: error.message });
-    }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
+  app.use("/api", api);
+
+  // 5. Static Files & SPA Fallback
+  const isProd = process.env.NODE_ENV === "production" || fs.existsSync(path.join(__dirname, "dist"));
+  
+  if (isProd) {
     const distPath = path.join(__dirname, "dist");
-    console.log(`[Server] Production mode: serving static files from ${distPath}`);
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
-      if (req.url.startsWith('/api/')) {
-        console.log(`[Server] 404 on API route: ${req.url}`);
-        return res.status(404).json({ error: `API route not found: ${req.url}` });
-      }
-      const indexPath = path.join(distPath, "index.html");
-      res.sendFile(indexPath);
+      if (req.url.startsWith("/api/")) return res.status(404).json({ error: "API Route Not Found" });
+      res.sendFile(path.join(distPath, "index.html"));
     });
+    console.log("[Server] Production mode: Serving static files.");
+  } else {
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+    app.use(vite.middlewares);
+    console.log("[Server] Development mode: Vite middleware active.");
   }
 
-  // Global Error Handler
+  // 6. Global Error Handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error('[Server] Unhandled error:', err);
-    res.status(500).json({ 
-      error: 'Internal Server Error', 
-      details: process.env.NODE_ENV === 'production' ? 'Ocorreu um erro interno no servidor.' : err.message 
-    });
+    res.status(500).json({ error: 'Internal Server Error', details: err.message });
   });
 
+  // 7. Start Listening
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`[Server] Listening on http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer();
+startServer().catch(err => console.error("[Server] Fatal error:", err));

@@ -226,7 +226,24 @@ export default function App() {
   const sigCanvas = React.useRef<SignatureCanvas>(null);
 
   useEffect(() => {
-    fetchData();
+    const checkHealthAndFetch = async () => {
+      console.log('Frontend: Checking server health...');
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          console.log('Frontend: Server is healthy, fetching data...');
+          fetchData();
+        } else {
+          throw new Error('Server starting...');
+        }
+      } catch (e) {
+        console.log('Frontend: Server not ready, retrying health check...');
+        setTimeout(checkHealthAndFetch, 2000);
+      }
+    };
+
+    checkHealthAndFetch();
+    
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
     if (savedTheme) {
       setTheme(savedTheme);
@@ -234,8 +251,8 @@ export default function App() {
     }
   }, []);
 
-  const fetchData = async () => {
-    console.log('Frontend: Fetching fresh data...');
+  const fetchData = async (retries = 3) => {
+    console.log(`Frontend: Fetching fresh data (attempt ${4 - retries})...`);
     setIsLoading(true);
     try {
       const fetchWithCheck = async (url: string) => {
@@ -274,9 +291,14 @@ export default function App() {
       setConnectionError(null);
     } catch (error: any) {
       console.error('Frontend: FetchData error:', error);
-      setConnectionError(error.message);
+      if (retries > 0) {
+        console.log('Frontend: Retrying in 2 seconds...');
+        setTimeout(() => fetchData(retries - 1), 2000);
+      } else {
+        setConnectionError(error.message);
+      }
     } finally {
-      setIsLoading(false);
+      if (retries === 0) setIsLoading(false);
     }
   };
 
