@@ -24,8 +24,16 @@ async function startServer() {
   let db: Database.Database;
   try {
     const dbPath = path.join(__dirname, "afclean.db");
-    db = new Database(dbPath);
+    
+    // Ensure directory exists
+    const dbDir = path.dirname(dbPath);
+    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+
+    db = new Database(dbPath, { timeout: 10000 }); // Increase timeout for busy DB
     db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('temp_store = MEMORY');
+    db.pragma('cache_size = -2000'); // 2MB cache
     
     db.exec(`
       CREATE TABLE IF NOT EXISTS appointments (
@@ -62,7 +70,6 @@ async function startServer() {
     console.log("[Server] Database connected and initialized.");
   } catch (error) {
     console.error("[Server] Database error:", error);
-    // Continue so server can respond with errors instead of being down
   }
 
   // 4. API Routes

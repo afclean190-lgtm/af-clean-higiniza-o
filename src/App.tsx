@@ -228,32 +228,8 @@ export default function App() {
   const sigCanvas = React.useRef<SignatureCanvas>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (isLoading) setLoadingTimeout(true);
-    }, 10000);
-
-    const checkHealthAndFetch = async () => {
-      console.log('Frontend: Checking server health...');
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
-        
-        const res = await fetch('/health', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        
-        if (res.ok) {
-          console.log('Frontend: Server is healthy, fetching data...');
-          fetchData();
-        } else {
-          throw new Error('Server starting...');
-        }
-      } catch (e) {
-        console.log('Frontend: Server not ready or timeout, retrying health check...');
-        setTimeout(checkHealthAndFetch, 2000);
-      }
-    };
-
-    checkHealthAndFetch();
+    // Initial data fetch
+    fetchData();
     
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
     if (savedTheme) {
@@ -261,57 +237,84 @@ export default function App() {
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
     
-    return () => clearTimeout(timer);
+    // Safety timeout to clear loading if something goes wrong
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(prev => {
+        if (prev) {
+          console.warn('Frontend: Safety timeout reached, forcing loading to false');
+          setLoadingTimeout(true);
+        }
+        return prev;
+      });
+    }, 15000);
+
+    return () => clearTimeout(safetyTimer);
   }, []);
 
   const fetchData = async (retries = 3) => {
     console.log(`Frontend: Starting fetchData (attempt ${4 - retries})...`);
     setIsLoading(true);
+    
     try {
-      const fetchWithCheck = async (url: string) => {
-        console.log(`Frontend: Fetching ${url}...`);
-        const res = await fetch(url);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(`Erro ao carregar ${url}: ${res.status} ${text.substring(0, 50)}`);
+      const fetchWithTimeout = async (url: string, timeout = 8000) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+        
+        try {
+          console.log(`Frontend: Fetching ${url}...`);
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(id);
+          
+          if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Erro ${res.status}: ${text.substring(0, 30)}`);
+          }
+          
+          const contentType = res.headers.get('content-type');
+          if (!contentType || !contentType.includes('application/json')) {
+            throw new Error(`Resposta inválida (não JSON)`);
+          }
+          
+          return await res.json();
+        } catch (e: any) {
+          clearTimeout(id);
+          throw e;
         }
-        const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          throw new Error(`Resposta inválida de ${url}: Esperava JSON, recebeu ${contentType}`);
-        }
-        return res.json();
       };
 
       const [appts, fins, sets] = await Promise.all([
-        fetchWithCheck('/api/appointments'),
-        fetchWithCheck('/api/financials'),
-        fetchWithCheck('/api/settings'),
+        fetchWithTimeout('/api/appointments'),
+        fetchWithTimeout('/api/financials'),
+        fetchWithTimeout('/api/settings'),
       ]);
       
-      console.log('Frontend: Data fetched successfully:', { 
-        apptsCount: appts.length, 
-        finsCount: fins.length
-      });
+      console.log('Frontend: Data fetched successfully');
 
-      const parsedAppts = appts.map((a: any) => ({
-        ...a,
-        before_photos: JSON.parse(a.before_photos || '[]'),
-        after_photos: JSON.parse(a.after_photos || '[]'),
-      }));
+      const parsedAppts = appts.map((a: any) => {
+        let before_photos = [];
+        let after_photos = [];
+        try { before_photos = JSON.parse(a.before_photos || '[]'); } catch (e) { console.error('Parse error before_photos', e); }
+        try { after_photos = JSON.parse(a.after_photos || '[]'); } catch (e) { console.error('Parse error after_photos', e); }
+        return { ...a, before_photos, after_photos };
+      });
       
       setAppointments(parsedAppts);
       setFinancials(fins);
       setSettings(sets);
       setConnectionError(null);
-      setIsLoading(false); // Clear loading on success
     } catch (error: any) {
       console.error('Frontend: FetchData error:', error);
       if (retries > 0) {
-        console.log('Frontend: Retrying in 2 seconds...');
-        setTimeout(() => fetchData(retries - 1), 2000);
+        console.log('Frontend: Retrying in 3 seconds...');
+        setTimeout(() => fetchData(retries - 1), 3000);
+        return; // Don't clear loading yet
       } else {
-        setConnectionError(error.message);
-        setIsLoading(false); // Clear loading on final failure
+        setConnectionError(error.message || 'Erro de conexão desconhecido');
+      }
+    } finally {
+      // Clear loading if we succeeded (no error) OR if we are out of retries
+      if (retries === 0 || !connectionError) {
+        setIsLoading(false);
       }
     }
   };
