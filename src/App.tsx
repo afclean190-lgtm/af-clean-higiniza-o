@@ -214,6 +214,7 @@ export default function App() {
   const [financials, setFinancials] = useState<Financial[]>([]);
   const [settings, setSettings] = useState<Settings>({});
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Partial<Appointment> | null>(null);
   const [activeService, setActiveService] = useState<Appointment | null>(null);
@@ -235,6 +236,7 @@ export default function App() {
 
   const fetchData = async () => {
     console.log('Frontend: Fetching fresh data...');
+    setIsLoading(true);
     try {
       const fetchWithCheck = async (url: string) => {
         const res = await fetch(url);
@@ -273,6 +275,8 @@ export default function App() {
     } catch (error: any) {
       console.error('Frontend: FetchData error:', error);
       setConnectionError(error.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -648,6 +652,15 @@ export default function App() {
   return (
     <div className="min-h-screen pb-24 md:pt-20">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} toggleTheme={toggleTheme} />
+
+      {isLoading && !connectionError && (
+        <div className="fixed inset-0 bg-white/80 dark:bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-sm font-medium text-gray-500 animate-pulse">Carregando dados...</p>
+          </div>
+        </div>
+      )}
 
       {connectionError && (
         <div className="max-w-4xl mx-auto p-4 mt-4">

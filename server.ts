@@ -5,54 +5,67 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database(path.join(__dirname, "afclean.db"));
-db.pragma('journal_mode = WAL');
-
-// Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS appointments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    customer_name TEXT NOT NULL,
-    address TEXT,
-    phone TEXT,
-    date TEXT,
-    status TEXT DEFAULT 'pending',
-    before_photos TEXT DEFAULT '[]',
-    after_photos TEXT DEFAULT '[]',
-    signature TEXT,
-    price REAL DEFAULT 0,
-    payment_method TEXT,
-    installments INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS financials (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    type TEXT CHECK(type IN ('income', 'expense')),
-    description TEXT,
-    amount REAL,
-    date TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
-  );
-`);
-
-// Migration: Add new columns if they don't exist
-try {
-  db.prepare("ALTER TABLE appointments ADD COLUMN before_photos TEXT DEFAULT '[]'").run();
-} catch (e) {}
-try {
-  db.prepare("ALTER TABLE appointments ADD COLUMN after_photos TEXT DEFAULT '[]'").run();
-} catch (e) {}
-try {
-  db.prepare("ALTER TABLE appointments ADD COLUMN service_type TEXT").run();
-} catch (e) {}
 
 async function startServer() {
+  console.log("[Server] Starting server initialization...");
+  
+  let db: Database.Database;
+  try {
+    const dbPath = path.join(__dirname, "afclean.db");
+    console.log(`[Server] Opening database at ${dbPath}`);
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    
+    // Initialize Database
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS appointments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_name TEXT NOT NULL,
+        address TEXT,
+        phone TEXT,
+        date TEXT,
+        status TEXT DEFAULT 'pending',
+        before_photos TEXT DEFAULT '[]',
+        after_photos TEXT DEFAULT '[]',
+        signature TEXT,
+        price REAL DEFAULT 0,
+        payment_method TEXT,
+        installments INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS financials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT CHECK(type IN ('income', 'expense')),
+        description TEXT,
+        amount REAL,
+        date TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+    `);
+
+    // Migration: Add new columns if they don't exist
+    try {
+      db.prepare("ALTER TABLE appointments ADD COLUMN before_photos TEXT DEFAULT '[]'").run();
+    } catch (e) {}
+    try {
+      db.prepare("ALTER TABLE appointments ADD COLUMN after_photos TEXT DEFAULT '[]'").run();
+    } catch (e) {}
+    try {
+      db.prepare("ALTER TABLE appointments ADD COLUMN service_type TEXT").run();
+    } catch (e) {}
+    
+    console.log("[Server] Database initialized successfully.");
+  } catch (error) {
+    console.error("[Server] Database initialization failed:", error);
+    process.exit(1);
+  }
+
   const app = express();
   const PORT = 3000;
 
