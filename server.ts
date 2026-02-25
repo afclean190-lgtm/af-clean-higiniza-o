@@ -272,6 +272,15 @@ async function startServer() {
     });
   }
 
+  // Global Error Handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error('[Server] Unhandled error:', err);
+    res.status(500).json({ 
+      error: 'Internal Server Error', 
+      details: process.env.NODE_ENV === 'production' ? 'Ocorreu um erro interno no servidor.' : err.message 
+    });
+  });
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });

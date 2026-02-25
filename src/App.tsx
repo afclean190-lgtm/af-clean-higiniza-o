@@ -213,6 +213,7 @@ export default function App() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [financials, setFinancials] = useState<Financial[]>([]);
   const [settings, setSettings] = useState<Settings>({});
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState<Partial<Appointment> | null>(null);
   const [activeService, setActiveService] = useState<Appointment | null>(null);
@@ -268,9 +269,10 @@ export default function App() {
       setAppointments(parsedAppts);
       setFinancials(fins);
       setSettings(sets);
+      setConnectionError(null);
     } catch (error: any) {
       console.error('Frontend: FetchData error:', error);
-      // Don't alert on initial load to avoid spam, but log it
+      setConnectionError(error.message);
     }
   };
 
@@ -646,6 +648,24 @@ export default function App() {
   return (
     <div className="min-h-screen pb-24 md:pt-20">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} toggleTheme={toggleTheme} />
+
+      {connectionError && (
+        <div className="max-w-4xl mx-auto p-4 mt-4">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3">
+            <X size={20} className="shrink-0" />
+            <div className="text-sm">
+              <p className="font-bold">Erro de Conexão</p>
+              <p>{connectionError}</p>
+            </div>
+            <button 
+              onClick={() => fetchData()}
+              className="ml-auto bg-red-100 hover:bg-red-200 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
+            >
+              Tentar Novamente
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-4xl mx-auto p-4">
         {activeTab === 'dashboard' && (
