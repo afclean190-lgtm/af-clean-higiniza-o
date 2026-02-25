@@ -66,8 +66,13 @@ async function startServer() {
 
   // API Routes
   app.get("/api/appointments", (req, res) => {
-    const rows = db.prepare("SELECT * FROM appointments ORDER BY date DESC").all();
-    res.json(rows);
+    try {
+      const rows = db.prepare("SELECT * FROM appointments ORDER BY date DESC").all();
+      res.json(rows);
+    } catch (error: any) {
+      console.error("[Server] Get appointments error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.post("/api/appointments", (req, res) => {
@@ -149,8 +154,13 @@ async function startServer() {
 
   // Financials API
   app.get("/api/financials", (req, res) => {
-    const rows = db.prepare("SELECT * FROM financials ORDER BY date DESC").all();
-    res.json(rows);
+    try {
+      const rows = db.prepare("SELECT * FROM financials ORDER BY date DESC").all();
+      res.json(rows);
+    } catch (error: any) {
+      console.error("[Server] Get financials error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.post("/api/financials", (req, res) => {
@@ -220,15 +230,25 @@ async function startServer() {
 
   // Settings API
   app.get("/api/settings", (req, res) => {
-    const rows = db.prepare("SELECT * FROM settings").all();
-    const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
-    res.json(settings);
+    try {
+      const rows = db.prepare("SELECT * FROM settings").all();
+      const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
+      res.json(settings);
+    } catch (error: any) {
+      console.error("[Server] Get settings error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   app.post("/api/settings", (req, res) => {
-    const { key, value } = req.body;
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
-    res.json({ success: true });
+    try {
+      const { key, value } = req.body;
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[Server] Update settings error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Vite middleware for development

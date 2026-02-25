@@ -271,6 +271,8 @@ export default function App() {
     const method = editingAppointment?.id ? 'PATCH' : 'POST';
     const url = editingAppointment?.id ? `/api/appointments/${editingAppointment.id}` : '/api/appointments';
     
+    console.log(`Frontend: Saving appointment via ${method} ${url}`, editingAppointment);
+
     try {
       const response = await fetch(url, {
         method,
@@ -279,8 +281,15 @@ export default function App() {
       });
       
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Erro ao salvar agendamento');
+        const text = await response.text();
+        let errorMessage = 'Erro no servidor';
+        try {
+          const err = JSON.parse(text);
+          errorMessage = err.error || errorMessage;
+        } catch (e) {
+          errorMessage = text.substring(0, 100) || `Erro HTTP ${response.status}`;
+        }
+        throw new Error(errorMessage);
       }
       
       setIsModalOpen(false);
@@ -332,6 +341,8 @@ export default function App() {
     const method = newFinancial.id ? 'PATCH' : 'POST';
     const url = newFinancial.id ? `/api/financials/${newFinancial.id}` : '/api/financials';
     
+    console.log(`Frontend: Saving financial via ${method} ${url}`, newFinancial);
+
     try {
       const response = await fetch(url, {
         method,
@@ -340,8 +351,15 @@ export default function App() {
       });
       
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Erro ao salvar registro financeiro');
+        const text = await response.text();
+        let errorMessage = 'Erro no servidor';
+        try {
+          const err = JSON.parse(text);
+          errorMessage = err.error || errorMessage;
+        } catch (e) {
+          errorMessage = text.substring(0, 100) || `Erro HTTP ${response.status}`;
+        }
+        throw new Error(errorMessage);
       }
       
       setIsFinancialModalOpen(false);
