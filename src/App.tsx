@@ -271,15 +271,25 @@ export default function App() {
     const method = editingAppointment?.id ? 'PATCH' : 'POST';
     const url = editingAppointment?.id ? `/api/appointments/${editingAppointment.id}` : '/api/appointments';
     
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editingAppointment),
-    });
-    
-    setIsModalOpen(false);
-    setEditingAppointment(null);
-    fetchData();
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingAppointment),
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Erro ao salvar agendamento');
+      }
+      
+      setIsModalOpen(false);
+      setEditingAppointment(null);
+      fetchData();
+    } catch (error: any) {
+      console.error('Frontend: Save appointment error:', error);
+      alert('Erro ao salvar: ' + error.message);
+    }
   };
 
   const handleDeleteAppointment = async (id: number) => {
@@ -322,15 +332,25 @@ export default function App() {
     const method = newFinancial.id ? 'PATCH' : 'POST';
     const url = newFinancial.id ? `/api/financials/${newFinancial.id}` : '/api/financials';
     
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newFinancial),
-    });
-    
-    setIsFinancialModalOpen(false);
-    setNewFinancial({ type: 'income', date: new Date().toISOString().split('T')[0] });
-    fetchData();
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newFinancial),
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Erro ao salvar registro financeiro');
+      }
+      
+      setIsFinancialModalOpen(false);
+      setNewFinancial({ type: 'income', date: new Date().toISOString().split('T')[0] });
+      fetchData();
+    } catch (error: any) {
+      console.error('Frontend: Save financial error:', error);
+      alert('Erro ao salvar: ' + error.message);
+    }
   };
 
   const handleDeleteFinancial = async (id: number) => {

@@ -57,6 +57,12 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(express.json({ limit: '50mb' }));
+  
+  // Request Logging
+  app.use((req, res, next) => {
+    console.log(`[Server] ${req.method} ${req.url}`);
+    next();
+  });
 
   // API Routes
   app.get("/api/appointments", (req, res) => {
@@ -65,11 +71,24 @@ async function startServer() {
   });
 
   app.post("/api/appointments", (req, res) => {
-    const { customer_name, address, phone, date, price, payment_method, installments, service_type } = req.body;
+    const { 
+      customer_name, address, phone, date, price, 
+      payment_method, installments, service_type,
+      before_photos, after_photos 
+    } = req.body;
+    
     try {
+      const beforePhotosStr = Array.isArray(before_photos) ? JSON.stringify(before_photos) : (before_photos || '[]');
+      const afterPhotosStr = Array.isArray(after_photos) ? JSON.stringify(after_photos) : (after_photos || '[]');
+      
       const info = db.prepare(
-        "INSERT INTO appointments (customer_name, address, phone, date, price, payment_method, installments, service_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-      ).run(customer_name, address, phone, date, price || 0, payment_method || 'Dinheiro', installments || 1, service_type || 'Limpeza de Sófá');
+        "INSERT INTO appointments (customer_name, address, phone, date, price, payment_method, installments, service_type, before_photos, after_photos) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(
+        customer_name, address, phone, date, price || 0, 
+        payment_method || 'Dinheiro', installments || 1, 
+        service_type || 'Limpeza de Sófá',
+        beforePhotosStr, afterPhotosStr
+      );
       res.json({ id: info.lastInsertRowid });
     } catch (error: any) {
       console.error("[Server] Create appointment error:", error);
@@ -83,6 +102,14 @@ async function startServer() {
     
     // Remove id from updates if present
     delete (updates as any).id;
+    
+    // Stringify photo arrays if present
+    if (updates.before_photos && Array.isArray(updates.before_photos)) {
+      updates.before_photos = JSON.stringify(updates.before_photos);
+    }
+    if (updates.after_photos && Array.isArray(updates.after_photos)) {
+      updates.after_photos = JSON.stringify(updates.after_photos);
+    }
     
     const keys = Object.keys(updates);
     const values = Object.values(updates);
